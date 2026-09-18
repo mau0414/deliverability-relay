@@ -17,7 +17,7 @@ func main() {
 	domainToTest := "google.com"
 
 	fmt.Printf("validating: %s...\n", domainToTest)
-	result, err := validator.ValidateDomain(ctx, domainToTest)
+	result, err := validator.ValidateDomain(ctx, "stripe.com", "google")
 
 	if err != nil {
 		if errors.Is(err, domain.ErrInvalidDomain) {
