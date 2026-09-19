@@ -1,4 +1,4 @@
-package protocol
+package smtp
 
 import ("net/smtp"
 		"fmt"
