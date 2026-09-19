@@ -53,10 +53,12 @@ func (c *Connection) Deliver(mtaDomain string, email domain.Email) error {
 	}
 	
 	// StartTLS to make content encrypted 
-	tlsConfig := &tls.Config{ServerName: mtaDomain}
-	if err := c.client.StartTLS(tlsConfig); err != nil {
-		return fmt.Errorf("STARTTLS command failed: %w", err) // things could be more graceful here but for a study case project tls servers only will be considered
-	} 
+	if ok, _ := c.client.Extension("STARTTLS"); ok {
+		tlsConfig := &tls.Config{ServerName: mtaDomain}
+		if err := c.client.StartTLS(tlsConfig); err != nil {
+			return fmt.Errorf("STARTTLS command failed: %w", err)
+    }
+}
 
 	// inform from to server
 	if err := c.client.Mail(email.From); err != nil {

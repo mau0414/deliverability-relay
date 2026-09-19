@@ -47,9 +47,8 @@ func main() {
 	q := queue.NewMemoryQueue(100)
 
 	// workers creating and start
-	w := worker.NewWorker(q)
-	go w.Start()
-
+	w := worker.NewWorker(q, "deliverability-relay.local")
+	go w.Start(context.Background())
 
 	// server creation and start
 	server := api.NewServer(q)
