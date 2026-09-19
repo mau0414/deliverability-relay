@@ -31,10 +31,13 @@ func (m *MemoryQueue) Enqueue(email domain.Email) error {
 
 }
 
-// todo aqui precisa de algum tratamento de erro?
 func (m *MemoryQueue) Dequeue() (domain.Email, error) {
 
-	nextEmail := <-m.queue
+	nextEmail, ok := <-m.queue
+
+	if !ok {
+		return domain.Email{}, errors.New("queue is closed")
+	}
 
 	return nextEmail, nil
 

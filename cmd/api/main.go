@@ -1,15 +1,18 @@
 package main
 
 import (
-	// "context"
+	"context"
 	// "errors"
-	// "fmt"
+	"fmt"
 	"log"
 
 	// "github.com/mau0414/deliverability-relay/internal/dns"
 	// "github.com/mau0414/deliverability-relay/internal/domain"
 	"github.com/mau0414/deliverability-relay/internal/api"
 	"github.com/mau0414/deliverability-relay/internal/queue"
+	"github.com/mau0414/deliverability-relay/internal/worker"
+	"github.com/mau0414/deliverability-relay/internal/dns"
+	
 )
 
 func main() {
@@ -36,8 +39,19 @@ func main() {
 	// fmt.Printf("   • Record content: %s\n", result.SPFRecord)
 	// fmt.Printf("   • Does it have DMARC?: %t\n", result.HasDMARC)
 
+	// TODO remove later - test of mx record resolver
+	r := dns.NewMXResolver()
+	host, err := r.ResolveMXRecord(context.Background(), "gmail.com")
+	fmt.Println(host, err)
 
 	q := queue.NewMemoryQueue(100)
+
+	// workers creating and start
+	w := worker.NewWorker(q)
+	go w.Start()
+
+
+	// server creation and start
 	server := api.NewServer(q)
 
 	addr := ":8080"
