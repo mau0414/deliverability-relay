@@ -15,3 +15,36 @@ type ValidationResult struct {
 	HasDMARC    bool
 	DMARCRecord string
 }
+
+type Status string
+
+const (
+	StatusQueued  Status = "queued"
+	StatusSending Status = "sending"
+	StatusSent    Status = "sent"
+	StatusBounced Status = "bounced"
+	StatusFailed  Status = "failed"
+)
+type Email struct {
+	ID string
+	From string
+	To []string
+	Subject string
+	HTML string
+	Status Status
+}
+
+func (e Email) Validate() error {
+	
+	if len(e.To) == 0 {
+		return errors.New("missing required field: to")
+	}
+	if e.From == "" {
+		return errors.New("missing required field: from")
+	}
+	if e.Subject == ""{
+		return errors.New("missing required field: subject")
+	}
+	
+	return nil
+}
