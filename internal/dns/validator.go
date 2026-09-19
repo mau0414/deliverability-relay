@@ -49,7 +49,7 @@ func (v* Validator) getTXTRecords(ctx context.Context, domainName string) ([]str
 
 }
 
-func parseDKIMRecord(record string) map[string] string {
+func parseRecord(record string) map[string] string {
 
 
 	// TODO estudar o que é esse make
@@ -81,17 +81,19 @@ func (v* Validator) validateDKIM(ctx context.Context, domainName string, selecto
 
 	txtRecords, err := v.getTXTRecords(ctx, dkimDomain)
 
-	fmt.Printf("DKIM domain: %s\n", dkimDomain)
-	fmt.Printf("TXT records: %v\n", txtRecords)
-	fmt.Printf("Error: %v\n", err)
+	// fmt.Printf("DKIM domain: %s\n", dkimDomain)
+	// fmt.Printf("TXT records: %v\n", txtRecords)
+	// fmt.Printf("Error: %v\n", err)
 
 	if err != nil || len(txtRecords) == 0 {
 
 		return false, domain.ErrInvalidDKIM // TODO separate error from empty dkim records
+	
+	}
 
 	for _, record := range txtRecords {
 
-		dkimMap := parseDKIMRecord(record)
+		dkimMap := parseRecord(record)
 
 		if dkimMap["p"] != "" {
 			return true, nil
@@ -102,7 +104,32 @@ func (v* Validator) validateDKIM(ctx context.Context, domainName string, selecto
 
 }
 
-func(v *Validator) validateDMARC(ctx, domainName) {
+
+// devo retornar erro quando p != none, reject, quarantine?
+func(v *Validator) findDMARC(ctx context.Context, domainName string) (bool, string) {
+
+	dmarcDomain :=  "_dmarc." + domainName
+	txtRecords, err := v.resolver.LookupTXT(ctx, dmarcDomain)
+	
+	fmt.Println(txtRecords)
+
+	if err != nil || len(txtRecords) == 0 {
+
+		return false, ""
+	}
+
+	for _, record := range txtRecords {
+
+		dmarcMap := parseRecord(record)
+
+		if dmarcMap["v"] == "DMARC1" {
+			return true, dmarcMap["p"]
+		}
+
+	}
+
+	return false, ""
+
 
 }
 
@@ -128,6 +155,8 @@ func (v *Validator) ValidateDomain(ctx context.Context, domainName string, selec
 	if !result.HasDKIM {
 		return result, err
 	}
+
+	result.HasDMARC, result.DMARCRecord = v.findDMARC(ctx, domainName)
 
 	return result, nil
 }

@@ -8,8 +8,10 @@ var (
 )
 // ValidationResult - keeps status of dns check
 type ValidationResult struct {
-	Domain   string
-	HasSPF   bool
-	HasDKIM  bool
-	SPFRecord string
+	Domain      string
+	HasSPF      bool
+	HasDKIM     bool
+	SPFRecord   string
+	HasDMARC    bool
+	DMARCRecord string
 }

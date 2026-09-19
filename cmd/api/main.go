@@ -32,4 +32,5 @@ func main() {
 	fmt.Printf("   • Domain: %s\n", result.Domain)
 	fmt.Printf("   • Does it have SPF?: %t\n", result.HasSPF)
 	fmt.Printf("   • Record content: %s\n", result.SPFRecord)
+	fmt.Printf("   • Does it have DMARC?: %t\n", result.HasDMARC)
 }
