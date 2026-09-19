@@ -1,8 +1,6 @@
 package api
 
-import (
-		// "context"
-		"net/http"
+import ("net/http"
 	
 		"github.com/mau0414/deliverability-relay/internal/queue")
 

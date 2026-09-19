@@ -1,11 +1,7 @@
 package api
 
 import ("net/http"
-		"encoding/json"
-		// "fmt"
-	
-		// "github.com/mau0414/deliverability-relay/internal/domain"
-	)
+		"encoding/json")
 
 
 func (s *Server) handleSend() http.HandlerFunc {
