@@ -5,6 +5,7 @@ import ("net/smtp"
 		"crypto/tls"
 		"strings"
 		"log"
+		"net"
 	
 		"github.com/mau0414/deliverability-relay/internal/domain")
 
@@ -51,10 +52,15 @@ func (c *Connection) Deliver(mtaDomain string, email domain.Email) error {
 	if err := c.client.Hello(mtaDomain); err != nil {
 		return fmt.Errorf("HELO command failed: %w", err)
 	}
+
+	host, _, err := net.SplitHostPort(c.addr)
+	if err != nil {
+		return fmt.Errorf("invalid address: %w", err)
+	}
 	
 	// StartTLS to make content encrypted 
 	if ok, _ := c.client.Extension("STARTTLS"); ok {
-		tlsConfig := &tls.Config{ServerName: mtaDomain}
+		tlsConfig := &tls.Config{ServerName: host}
 		if err := c.client.StartTLS(tlsConfig); err != nil {
 			return fmt.Errorf("STARTTLS command failed: %w", err)
     }
