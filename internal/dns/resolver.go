@@ -2,13 +2,9 @@ package dns
 
 import (
 	"context"
-	// "fmt"
 	"net"
-	// "strings"
-	// "time"
 	"errors"
 
-	// "github.com/mau0414/deliverability-relay/internal/domain"
 )
 
 type MXResolver struct {

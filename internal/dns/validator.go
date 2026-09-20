@@ -49,10 +49,9 @@ func (v* Validator) getTXTRecords(ctx context.Context, domainName string) ([]str
 
 }
 
+// add test
 func parseRecord(record string) map[string] string {
 
-
-	// TODO estudar o que é esse make
 	tags := make(map[string]string)
 
 	parts := strings.Split(record, ";")
@@ -81,10 +80,6 @@ func (v* Validator) validateDKIM(ctx context.Context, domainName string, selecto
 
 	txtRecords, err := v.getTXTRecords(ctx, dkimDomain)
 
-	// fmt.Printf("DKIM domain: %s\n", dkimDomain)
-	// fmt.Printf("TXT records: %v\n", txtRecords)
-	// fmt.Printf("Error: %v\n", err)
-
 	if err != nil || len(txtRecords) == 0 {
 
 		return false, domain.ErrInvalidDKIM // TODO separate error from empty dkim records
@@ -104,8 +99,6 @@ func (v* Validator) validateDKIM(ctx context.Context, domainName string, selecto
 
 }
 
-
-// devo retornar erro quando p != none, reject, quarantine?
 func(v *Validator) findDMARC(ctx context.Context, domainName string) (bool, string) {
 
 	dmarcDomain :=  "_dmarc." + domainName

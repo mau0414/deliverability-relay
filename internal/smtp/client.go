@@ -31,6 +31,7 @@ func NewConnection(addr string) (*Connection, error) {
 
 }
 
+// todo add test
 func protocolFormat(email domain.Email) string {
 	toHeader := strings.Join(email.To, ", ")
 
