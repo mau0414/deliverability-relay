@@ -76,6 +76,7 @@ func (w *Worker) Start(ctx context.Context) {
 			continue
 		}
 
+		w.repository.UpdateStatus(ctx, email, domain.StatusSending)
 		log.Printf("processing email: %+v", email)
 
 		for _, to := range email.To {

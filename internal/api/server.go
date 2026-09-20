@@ -29,6 +29,7 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /health", s.handleHealth())
 	s.mux.HandleFunc("POST /send", s.handleSend())
+	s.mux.HandleFunc("GET /dashboard", s.handleDashboard())
 }
 
 func (s *Server) ListenAndServe(addr string) error {
