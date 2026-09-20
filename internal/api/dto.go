@@ -23,6 +23,7 @@ func (req SendEmailRequest) ToDomain() domain.Email {
 		Subject: req.Subject,
 		HTML: req.HTML,
 		Status: domain.StatusQueued,
+		Attempts: 0,
 	}
 
 }

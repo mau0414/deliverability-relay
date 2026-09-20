@@ -2,6 +2,8 @@ package domain
 
 import "errors"
 
+const MaxDeliveryAttempts = 5
+
 var (
     ErrInvalidDomain  = errors.New("domain validation failed: missing or invalid SPF record")
     ErrInvalidDKIM    = errors.New("dkim validation failed: missing or empty public key (p= tag)")
@@ -32,6 +34,7 @@ type Email struct {
 	Subject string
 	HTML string
 	Status Status
+	Attempts int
 }
 
 func (e Email) Validate() error {
