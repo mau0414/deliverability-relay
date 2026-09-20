@@ -51,9 +51,9 @@ func (w *Worker) Start(ctx context.Context) {
 			}	
 
 			resolveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			cancel()
 
 			rcpt, err := w.mxResolver.ResolveMXRecord(resolveCtx, toDomain)
+			cancel()
 
 			if err != nil {
 
