@@ -12,6 +12,8 @@ import (
 	"github.com/mau0414/deliverability-relay/internal/queue"
 	"github.com/mau0414/deliverability-relay/internal/worker"
 	"github.com/mau0414/deliverability-relay/internal/dns"
+	"github.com/mau0414/deliverability-relay/internal/repository"
+	"github.com/jackc/pgx/v5/pgxpool"
 	
 )
 
@@ -40,18 +42,32 @@ func main() {
 	// fmt.Printf("   • Does it have DMARC?: %t\n", result.HasDMARC)
 
 	// TODO remove later - test of mx record resolver
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, "postgres://mta:mta_dev_password@localhost:5433/mta") // TODO colocar isso num .env?
+	if err != nil {
+		log.Fatalf("failed to connect to postgres: %v", err)
+	}
+	defer pool.Close()
+	
+	if err := pool.Ping(ctx); err != nil {
+		log.Fatalf("postgres ping failed: %v", err)
+	}
+
+	repository := repository.NewEmailRepository(pool)
+
 	r := dns.NewMXResolver()
-	host, err := r.ResolveMXRecord(context.Background(), "gmail.com")
+	host, err := r.ResolveMXRecord(ctx, "gmail.com")
 	fmt.Println(host, err)
 
 	q := queue.NewMemoryQueue(100)
 
 	// workers creating and start
-	w := worker.NewWorker(q, "deliverability-relay.local")
-	go w.Start(context.Background())
+	w := worker.NewWorker(q, "deliverability-relay.local", repository)
+	go w.Start(ctx)
 
 	// server creation and start
-	server := api.NewServer(q)
+	server := api.NewServer(q, repository)
 
 	addr := ":8080"
 	log.Printf("server listening in %s", addr)

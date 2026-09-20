@@ -2,18 +2,21 @@ package api
 
 import ("net/http"
 	
-		"github.com/mau0414/deliverability-relay/internal/queue")
+		"github.com/mau0414/deliverability-relay/internal/queue"
+		"github.com/mau0414/deliverability-relay/internal/repository")
 
 type Server struct {
 	mux *http.ServeMux
 	queue queue.Queue
+	repository *repository.EmailRepository
 }
 
-func NewServer(q queue.Queue) *Server {
+func NewServer(q queue.Queue, r *repository.EmailRepository) *Server {
 
 	s := &Server{
 		mux: http.NewServeMux(),
 		queue: q,
+		repository: r,
 	}
 
 	s.routes()
