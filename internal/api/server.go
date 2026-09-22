@@ -3,20 +3,25 @@ package api
 import ("net/http"
 	
 		"github.com/mau0414/deliverability-relay/internal/queue"
+		"github.com/mau0414/deliverability-relay/internal/dns"
 		"github.com/mau0414/deliverability-relay/internal/repository")
 
 type Server struct {
 	mux *http.ServeMux
 	queue queue.Queue
-	repository *repository.EmailRepository
+	emailRepository *repository.EmailRepository
+	domainRepository *repository.DomainRepository
+	dnsValidator *dns.Validator
 }
 
-func NewServer(q queue.Queue, r *repository.EmailRepository) *Server {
+func NewServer(q queue.Queue, emailRepository *repository.EmailRepository, domainRepository *repository.DomainRepository, dnsValidator *dns.Validator) *Server {
 
 	s := &Server{
 		mux: http.NewServeMux(),
 		queue: q,
-		repository: r,
+		emailRepository: emailRepository,
+		domainRepository: domainRepository,
+		dnsValidator: dnsValidator,
 	}
 
 	s.routes()
@@ -28,6 +33,7 @@ func NewServer(q queue.Queue, r *repository.EmailRepository) *Server {
 func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /health", s.handleHealth())
+	s.mux.HandleFunc("POST /domains", s.handleDomains())
 	s.mux.HandleFunc("POST /send", s.handleSend())
 	s.mux.HandleFunc("GET /dashboard", s.handleDashboard())
 }

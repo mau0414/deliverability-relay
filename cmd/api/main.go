@@ -54,7 +54,8 @@ func main() {
 		log.Fatalf("postgres ping failed: %v", err)
 	}
 
-	repository := repository.NewEmailRepository(pool)
+	emailRepository := repository.NewEmailRepository(pool)
+	domainRepository := repository.NewDomainRepository(pool)
 
 	r := dns.NewMXResolver()
 	host, err := r.ResolveMXRecord(ctx, "gmail.com")
@@ -62,12 +63,14 @@ func main() {
 
 	q := queue.NewMemoryQueue(100)
 
+	dnsValidator := dns.NewValidator()
+
 	// workers creating and start
-	w := worker.NewWorker(q, "deliverability-relay.local", repository)
+	w := worker.NewWorker(q, "deliverability-relay.local", emailRepository)
 	go w.Start(ctx)
 
 	// server creation and start
-	server := api.NewServer(q, repository)
+	server := api.NewServer(q, emailRepository, domainRepository, dnsValidator)
 
 	addr := ":8080"
 	log.Printf("server listening in %s", addr)

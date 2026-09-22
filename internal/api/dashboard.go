@@ -144,7 +144,7 @@ func (s *Server) handleDashboard() http.HandlerFunc {
 	tmpl := template.Must(template.New("dashboard").Parse(dashboardHTML))
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		metrics, err := s.repository.GetMetrics(r.Context())
+		metrics, err := s.emailRepository.GetMetrics(r.Context())
 		if err != nil {
 			http.Error(w, "failed to load metrics", http.StatusInternalServerError)
 			return

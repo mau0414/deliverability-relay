@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 	"time"
+	"errors"
 
 	"github.com/mau0414/deliverability-relay/internal/domain"
 )
@@ -24,11 +25,25 @@ func buildDKIMDomain(domainName string, selector string) string {
     return selector + "._domainkey." + domainName
 } 
 
+func isNXDomain(err error) bool {
+	var dnsErr *net.DNSError
+
+    if errors.As(err, &dnsErr) {
+        return dnsErr.IsNotFound
+    }
+
+    return false
+}
+
 func (v* Validator) findSPFRecord(ctx context.Context, domainName string) (bool, string, error) {
 
 	// get all txt registers of given domain
 	txtRecords, err := v.resolver.LookupTXT(ctx, domainName)
 	if err != nil {
+
+		if isNXDomain(err) {
+			return false, "", domain.ErrDomainNotFound
+		}
 
 		return false, "", fmt.Errorf("failed consulting TXT register for the domain %s: %w", domainName, err)
 	}
@@ -40,7 +55,7 @@ func (v* Validator) findSPFRecord(ctx context.Context, domainName string) (bool,
 		}
 	}
 
-	return false, "", domain.ErrInvalidDomain
+	return false, "", nil
 }
 
 func (v* Validator) getTXTRecords(ctx context.Context, domainName string) ([]string, error) {
@@ -50,7 +65,7 @@ func (v* Validator) getTXTRecords(ctx context.Context, domainName string) ([]str
 }
 
 // add test
-func parseRecord(record string) map[string] string {
+func parseRecord(record string) map[string]string {
 
 	tags := make(map[string]string)
 
@@ -74,16 +89,25 @@ func parseRecord(record string) map[string] string {
 
 }
 
-func (v* Validator) validateDKIM(ctx context.Context, domainName string, selector string) (bool, error) {
+func (v* Validator) findDKIM(ctx context.Context, domainName string, selector string) (bool, error) {
 
 	dkimDomain := buildDKIMDomain(domainName, selector)
 
 	txtRecords, err := v.getTXTRecords(ctx, dkimDomain)
 
-	if err != nil || len(txtRecords) == 0 {
+	if err != nil {
 
-		return false, domain.ErrInvalidDKIM // TODO separate error from empty dkim records
+		if isNXDomain(err) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("failed consulting TXT register for dkim domain %s: %w", dkimDomain, err)
 	
+	} 
+
+	if len(txtRecords) == 0 {
+
+		return false, nil
 	}
 
 	for _, record := range txtRecords {
@@ -95,20 +119,26 @@ func (v* Validator) validateDKIM(ctx context.Context, domainName string, selecto
 		}
 	}
 
-	return false, domain.ErrInvalidDKIM
+	return false, nil
 
 }
 
-func(v *Validator) findDMARC(ctx context.Context, domainName string) (bool, string) {
+func(v *Validator) findDMARC(ctx context.Context, domainName string) (bool, string, error) {
 
 	dmarcDomain :=  "_dmarc." + domainName
 	txtRecords, err := v.resolver.LookupTXT(ctx, dmarcDomain)
-	
-	fmt.Println(txtRecords)
 
-	if err != nil || len(txtRecords) == 0 {
+	if err != nil {
 
-		return false, ""
+		if isNXDomain(err) {
+			return false, "", nil
+		}
+
+		return false, "", fmt.Errorf("failed consulting TXT register for the dmarc domain %s: %w", dmarcDomain, err)
+	}
+
+	if len(txtRecords) == 0 {
+		return false, "", nil
 	}
 
 	for _, record := range txtRecords {
@@ -116,12 +146,12 @@ func(v *Validator) findDMARC(ctx context.Context, domainName string) (bool, stri
 		dmarcMap := parseRecord(record)
 
 		if dmarcMap["v"] == "DMARC1" {
-			return true, dmarcMap["p"]
+			return true, dmarcMap["p"], nil
 		}
 
 	}
 
-	return false, ""
+	return false, "", nil
 
 
 }
@@ -135,21 +165,21 @@ func (v *Validator) ValidateDomain(ctx context.Context, domainName string, selec
 	result := &domain.ValidationResult{
 		Domain: domainName,
 	}
+	
 	var err error
 
 	result.HasSPF, result.SPFRecord, err = v.findSPFRecord(ctx, domainName)
-
-	if !result.HasSPF {
-		return result, err
+	if err != nil {
+		return nil, err
 	}
-
-	result.HasDKIM, err = v.validateDKIM(ctx, domainName, selector)
-
-	if !result.HasDKIM {
-		return result, err
+	result.HasDKIM, err = v.findDKIM(ctx, domainName, selector)
+	if err != nil {
+		return nil, err
 	}
-
-	result.HasDMARC, result.DMARCRecord = v.findDMARC(ctx, domainName)
+	result.HasDMARC, result.DMARCRecord, err = v.findDMARC(ctx, domainName)
+	if err != nil {
+		return nil, err
+	}
 
 	return result, nil
 }

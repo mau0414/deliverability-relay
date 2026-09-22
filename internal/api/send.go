@@ -15,7 +15,7 @@ func (s *Server) handleSend() http.HandlerFunc {
 			return
 		}
 
-		email := req.ToDomain()
+		email := req.ToEmailDomain()
 
 		if err := email.Validate(); err != nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -24,7 +24,7 @@ func (s *Server) handleSend() http.HandlerFunc {
 			return
 		}
 
-		if err := s.repository.Save(r.Context(), email); err != nil {
+		if err := s.emailRepository.Save(r.Context(), email); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to save email"})

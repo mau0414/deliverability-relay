@@ -6,7 +6,8 @@ const MaxDeliveryAttempts = 5
 
 var (
     ErrInvalidDomain  = errors.New("domain validation failed: missing or invalid SPF record")
-    ErrInvalidDKIM    = errors.New("dkim validation failed: missing or empty public key (p= tag)")
+    ErrInvalidDKIM    = errors.New("dkim validation failed")
+	ErrDomainNotFound    = errors.New("given domain Not Found")
 )
 type ValidationResult struct {
 	Domain      string

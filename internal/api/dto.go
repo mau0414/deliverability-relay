@@ -14,7 +14,7 @@ type SendEmailResponse struct {
     ID string `json:"id"`
 }
 
-func (req SendEmailRequest) ToDomain() domain.Email {
+func (req SendEmailRequest) ToEmailDomain() domain.Email {
 
 	return domain.Email{
 		ID: uuid.New().String(),
@@ -26,4 +26,25 @@ func (req SendEmailRequest) ToDomain() domain.Email {
 		Attempts: 0,
 	}
 
+}
+
+type CreateDomainRequest struct {
+	Name string
+}
+
+type CreateDomainResponse struct {
+	ID string
+}
+
+func (req CreateDomainRequest) ToDomainDomain(HasSPF bool, SPFRecord string, HasDKIM bool, HasDMARC bool, DMARCRecord string) domain.Domain {
+
+	return domain.Domain{
+		ID: uuid.New().String(),
+		Name: req.Name,
+		HasSPF: HasSPF,
+		SPFRecord: SPFRecord,
+		HasDKIM: HasDKIM,
+		HasDMARC: HasDMARC,
+		DMARCRecord: DMARCRecord,
+	}
 }
