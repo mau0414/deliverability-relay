@@ -13,6 +13,7 @@ import (
 	"github.com/mau0414/deliverability-relay/internal/worker"
 	"github.com/mau0414/deliverability-relay/internal/dns"
 	"github.com/mau0414/deliverability-relay/internal/repository"
+	"github.com/mau0414/deliverability-relay/internal/cache"
 	"github.com/jackc/pgx/v5/pgxpool"
 	
 )
@@ -44,6 +45,7 @@ func main() {
 	// TODO remove later - test of mx record resolver
 
 	ctx := context.Background()
+
 	pool, err := pgxpool.New(ctx, "postgres://mta:mta_dev_password@localhost:5433/mta") // TODO colocar isso num .env?
 	if err != nil {
 		log.Fatalf("failed to connect to postgres: %v", err)
@@ -56,6 +58,12 @@ func main() {
 
 	emailRepository := repository.NewEmailRepository(pool)
 	domainRepository := repository.NewDomainRepository(pool)
+
+	redisClient := cache.NewRedis()
+
+	if err := redisClient.Ping(context.Background()); err != nil {
+		log.Fatalf("failed to connect to Redis: %v", err)
+	}
 
 	r := dns.NewMXResolver()
 	host, err := r.ResolveMXRecord(ctx, "gmail.com")
@@ -70,7 +78,7 @@ func main() {
 	go w.Start(ctx)
 
 	// server creation and start
-	server := api.NewServer(q, emailRepository, domainRepository, dnsValidator)
+	server := api.NewServer(q, emailRepository, domainRepository, dnsValidator, redisClient)
 
 	addr := ":8080"
 	log.Printf("server listening in %s", addr)

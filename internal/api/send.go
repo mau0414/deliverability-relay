@@ -24,6 +24,8 @@ func (s *Server) handleSend() http.HandlerFunc {
 			return
 		}
 
+		// todo pre-flight com cache depois postgre
+
 		if err := s.emailRepository.Save(r.Context(), email); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)

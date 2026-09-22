@@ -4,7 +4,8 @@ import ("net/http"
 	
 		"github.com/mau0414/deliverability-relay/internal/queue"
 		"github.com/mau0414/deliverability-relay/internal/dns"
-		"github.com/mau0414/deliverability-relay/internal/repository")
+		"github.com/mau0414/deliverability-relay/internal/repository"
+		"github.com/mau0414/deliverability-relay/internal/cache")
 
 type Server struct {
 	mux *http.ServeMux
@@ -12,9 +13,10 @@ type Server struct {
 	emailRepository *repository.EmailRepository
 	domainRepository *repository.DomainRepository
 	dnsValidator *dns.Validator
+	cache *cache.Redis
 }
 
-func NewServer(q queue.Queue, emailRepository *repository.EmailRepository, domainRepository *repository.DomainRepository, dnsValidator *dns.Validator) *Server {
+func NewServer(q queue.Queue, emailRepository *repository.EmailRepository, domainRepository *repository.DomainRepository, dnsValidator *dns.Validator, redis *cache.Redis) *Server {
 
 	s := &Server{
 		mux: http.NewServeMux(),
@@ -22,6 +24,7 @@ func NewServer(q queue.Queue, emailRepository *repository.EmailRepository, domai
 		emailRepository: emailRepository,
 		domainRepository: domainRepository,
 		dnsValidator: dnsValidator,
+		cache: redis,
 	}
 
 	s.routes()
