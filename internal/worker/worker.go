@@ -18,15 +18,17 @@ type Worker struct {
 	mxResolver *dns.MXResolver
 	mtaDomain string
 	repository *repository.EmailRepository
+	useMailpit bool
 }
 
-func NewWorker(q queue.Queue, mtaDomain string, r *repository.EmailRepository) *Worker {
+func NewWorker(q queue.Queue, mtaDomain string, r *repository.EmailRepository, useMailpit bool) *Worker {
 
 	return &Worker{
 		queue: q,
 		mxResolver: dns.NewMXResolver(),
 		mtaDomain: mtaDomain,
 		repository: r,
+		useMailpit: useMailpit,
 	}	
 
 }
@@ -81,26 +83,29 @@ func (w *Worker) Start(ctx context.Context) {
 
 		for _, to := range email.To {
 
-			// toDomain, err := dns.ParseReceiverDomain(to)
+			var addr string
 
-			// if err != nil {
-			// 	log.Printf("invalid recipient address %s: %v", to, err)
-			// 	continue
-			// }	
+			if w.useMailpit {
+				addr = "localhost:1025"
+			} else {
+				toDomain, err := dns.ParseReceiverDomain(to)
+				if err != nil {
+					log.Printf("invalid recipient address %s: %v", to, err)
+					continue
+				}
 
-			// resolveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				resolveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				rcpt, err := w.mxResolver.ResolveMXRecord(resolveCtx, toDomain)
+				cancel()
 
-			// rcpt, err := w.mxResolver.ResolveMXRecord(resolveCtx, toDomain)
-			// cancel()
+				if err != nil {
+					log.Printf("failed to resolve MX for %s: %v", to, err)
+					w.handleDeliveryFailure(ctx, email, to, err)
+					continue
+				}
 
-			// if err != nil {
-			// 	log.Printf("failed to resolve MX for %s: %v", to, err)
-			// 	w.handleDeliveryFailure(ctx, email, to, err)
-			// 	continue
-			// }
-
-			// addr := rcpt + ":25"
-			addr := "localhost:1025" // - uncomment to test at mailpit
+				addr = rcpt + ":25"
+			}
 
 			connection, err := smtp.NewConnection(addr)
 

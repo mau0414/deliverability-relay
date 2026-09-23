@@ -26,6 +26,9 @@ func main() {
 	envTest := flag.Bool("env-test", false, "skip domain SPF/DKIM preflight validation (local testing only)")
 	flag.Parse()
 
+	useMailpit := flag.Bool("mailpit", false, "deliver to local Mailpit (localhost:1025) instead of resolving real MX records")
+	flag.Parse()
+
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
 		log.Fatal("DATABASE_URL is not set")
@@ -57,7 +60,7 @@ func main() {
 	dnsValidator := dns.NewValidator()
 
 	// workers creating and start
-	w := worker.NewWorker(q, "deliverability-relay.local", emailRepository)
+	w := worker.NewWorker(q, "deliverability-relay.local", emailRepository, *useMailpit)
 	go w.Start(ctx)
 
 	// server creation and start
