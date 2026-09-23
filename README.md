@@ -239,7 +239,7 @@ go run ./cmd/api
 ```
 
 ⚠️ **Important**
-If you don't have a domain with real DNS records to test against, run with `--env-test` instead, which skips SPF/DKIM validation on domain registration and skips the delivery preflight on send (see [`--env-test`: an explicit, opt-in bypass](#--env-test-an-explicit-opt-in-bypass) below):
+If you don't have a domain with real DNS records to test against, run with `--env-test` instead, which skips SPF/DKIM validation on domain registration and skips the delivery preflight on send. Otherwise a DNS validation fail will happen. (see [`--env-test`: an explicit, opt-in bypass](#--env-test-an-explicit-opt-in-bypass) below):
 
 ```bash
 go run ./cmd/api --env-test
