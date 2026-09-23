@@ -14,9 +14,10 @@ type Server struct {
 	domainRepository *repository.DomainRepository
 	dnsValidator *dns.Validator
 	cache *cache.Redis
+	skipPreFlight bool
 }
 
-func NewServer(q queue.Queue, emailRepository *repository.EmailRepository, domainRepository *repository.DomainRepository, dnsValidator *dns.Validator, redis *cache.Redis) *Server {
+func NewServer(q queue.Queue, emailRepository *repository.EmailRepository, domainRepository *repository.DomainRepository, dnsValidator *dns.Validator, redis *cache.Redis, skipPreFlight bool) *Server {
 
 	s := &Server{
 		mux: http.NewServeMux(),
@@ -25,6 +26,7 @@ func NewServer(q queue.Queue, emailRepository *repository.EmailRepository, domai
 		domainRepository: domainRepository,
 		dnsValidator: dnsValidator,
 		cache: redis,
+		skipPreFlight: skipPreFlight, 
 	}
 
 	s.routes()

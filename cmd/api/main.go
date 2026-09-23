@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"flag"
 
 	"github.com/mau0414/deliverability-relay/internal/api"
 	"github.com/mau0414/deliverability-relay/internal/queue"
@@ -21,6 +22,9 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("no .env file found, relying on real environment variables")
 	}
+
+	envTest := flag.Bool("env-test", false, "skip domain SPF/DKIM preflight validation (local testing only)")
+	flag.Parse()
 
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
@@ -57,7 +61,7 @@ func main() {
 	go w.Start(ctx)
 
 	// server creation and start
-	server := api.NewServer(q, emailRepository, domainRepository, dnsValidator, redisClient)
+	server := api.NewServer(q, emailRepository, domainRepository, dnsValidator, redisClient, *envTest)
 
 	addr := ":8080"
 	log.Printf("server listening in %s", addr)
