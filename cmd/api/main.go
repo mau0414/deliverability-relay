@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 
 	"github.com/mau0414/deliverability-relay/internal/api"
 	"github.com/mau0414/deliverability-relay/internal/queue"
@@ -11,14 +12,24 @@ import (
 	"github.com/mau0414/deliverability-relay/internal/repository"
 	"github.com/mau0414/deliverability-relay/internal/cache"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/joho/godotenv"
 	
 )
 
 func main() {
 
+	if err := godotenv.Load(); err != nil {
+		log.Println("no .env file found, relying on real environment variables")
+	}
+
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		log.Fatal("DATABASE_URL is not set")
+	}
+
 	ctx := context.Background()
 
-	pool, err := pgxpool.New(ctx, "postgres://mta:mta_dev_password@localhost:5433/mta") // TODO colocar isso num .env?
+	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		log.Fatalf("failed to connect to postgres: %v", err)
 	}

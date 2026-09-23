@@ -1,7 +1,6 @@
 package api
 
-import ("context"
-		"net/http"
+import ("net/http"
 		"encoding/json"
 		"errors"
 		"log"
@@ -44,7 +43,7 @@ func (s *Server) handleDomains() http.HandlerFunc {
 
 		newDomain := req.ToDomainDomain(validationResult.HasSPF, validationResult.SPFRecord, validationResult.HasDKIM, validationResult.HasDMARC, validationResult.DMARCRecord)
 
-		if err := s.domainRepository.Save(r.Context(), newDomain); err != nil {
+		if err := s.domainRepository.Save(ctx, newDomain); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to save domain"})
