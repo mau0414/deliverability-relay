@@ -234,44 +234,18 @@ View delivered test emails at `http://localhost:8025`.
 
 ### 5. Run the application
 
-There are two ways to exercise the full flow, depending on whether you have a real domain with DNS access.
-
-#### A) Using a real, DNS-controlled domain
-
-This is the realistic path: it exercises actual SPF/DKIM validation and the delivery preflight exactly as they'd run in production.
-
-Requirements:
-
-- A domain you own, with:
-  - An SPF TXT record (`v=spf1 ...`)
-  - A DKIM TXT record at `resend._domainkey.<your-domain>` with a public key (`p=...`)
-
 ```bash
 go run ./cmd/api
-
-curl -X POST http://localhost:8080/api/domains \
-  -H "Content-Type: application/json" \
-  -d '{"name":"your-actual-domain.com"}'
-
-curl -X POST http://localhost:8080/send \
-  -H "Content-Type: application/json" \
-  -d '{"from":"you@your-actual-domain.com","to":["someone@example.com"],"subject":"test","html":"<p>hi</p>"}'
 ```
 
-If SPF or DKIM is missing or misconfigured, `/api/domains` will still return `201 Created` (a domain existing without full authentication is a valid state, not an error — see [Design Decisions](#design-decisions)), but `/send` will fail preflight and the email will be marked `failed` without an SMTP attempt.
-
-#### B) Local testing with a fake domain (`--local-test`)
-
-If you don't have a domain to test against, or just want to exercise the queue → worker → SMTP delivery path without touching real DNS, run the binary with `--local-test`:
+⚠️ **Important**
+If you don't have a domain with real DNS records to test against, run with `--env-test` instead, which skips SPF/DKIM validation on domain registration and skips the delivery preflight on send. Otherwise a DNS validation fail will happen. (see [`--env-test`: an explicit, opt-in bypass](#--env-test-an-explicit-opt-in-bypass) below):
 
 ```bash
-go run ./cmd/api --local-test
+go run ./cmd/api --env-test
 ```
 
-This bypasses both DNS-dependent checks:
-
-- `POST /api/domains` skips SPF/DKIM/DMARC validation — any domain name is accepted and stored as verified, including ones that don't exist (e.g. `example.com`, `acme.test`).
-- The worker's delivery preflight is skipped — every sender domain is treated as verified, regardless of what's cached or stored in PostgreSQL.
+### 6. Register a domain, then send a test email
 
 ```bash
 curl -X POST http://localhost:8080/api/domains \
@@ -283,9 +257,36 @@ curl -X POST http://localhost:8080/send \
   -d '{"from":"you@example.com","to":["someone@example.com"],"subject":"test","html":"<p>hi</p>"}'
 ```
 
-This mode is strictly a local development convenience. It is never enabled by default and is not intended for anything resembling production use.
+Without `--env-test`, the domain needs real DNS records — an SPF TXT record (`v=spf1 ...`) and a DKIM TXT record at `resend._domainkey.<your-domain>` with a public key (`p=...`) — or `/api/domains` will still return `201 Created` (a domain existing without full authentication is a valid state, not an error — see [Design Decisions](#design-decisions)) but `/send` will fail preflight and the email will be marked `failed` without an SMTP attempt.
 
 View the dashboard at `http://localhost:8080/dashboard`.
+
+### Testing email delivery: where to send test emails
+
+Once an email is queued, you'll want somewhere to actually check whether it arrived. Three options, depending on how much setup you want:
+
+**Option 1: Your own Gmail (or similar) inbox — quick, but likely to fail.** Point `to` at your personal address. This will most likely be rejected with `550 ... not authorized to send email directly` — Gmail's IP-reputation policy for an unrecognized sending IP (your machine), not a bug in the relay. Still a useful test: if the SMTP handshake completes (connection, STARTTLS, `HELO`, `MAIL FROM`, `RCPT TO`, `DATA` all accepted) and only the final acceptance is rejected, that confirms the relay speaks SMTP correctly — see [Real-world validation](#real-world-validation).
+
+**Option 2: Mailpit — reliable, requires local setup.**
+
+```bash
+docker run -d --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit
+```
+
+Run with `--mailpit` to deliver to `localhost:1025` instead of resolving the recipient's real MX record:
+
+```bash
+go run ./cmd/api --mailpit
+```
+
+View delivered mail at `http://localhost:8025`.
+
+**Option 3: A permissive public mailbox — no local setup.** Disposable inboxes designed to accept mail broadly rather than apply strict sender-reputation checks — the opposite of Gmail, which is why this works better from an unrecognized IP:
+
+- **[Mailinator](https://www.mailinator.com/)** — send to any address `@mailinator.com`, check the same inbox name at mailinator.com. No signup.
+- **[Guerrilla Mail](https://www.guerrillamail.com/)** — similar disposable-inbox service, also no signup.
+
+Neither guarantees permanent, unfiltered acceptance, but both are a reasonable default without a domain of your own to check.
 
 ## Running Tests
 
@@ -318,7 +319,7 @@ The delivery queue is ephemeral by design (a Go channel); losing it on process r
 ### No sender-facing API authentication (yet)
 `POST /send` and `POST /api/domains` are currently open — any caller can submit a send or register a domain. In a production system this relay's own premise (only authenticated clients should be able to send) would require it. It's left out of the current scope by deliberate choice, not oversight, to keep focus on the delivery and DNS-authentication mechanics that were the core learning goal of this project.
 
-### `--local-test`: an explicit, opt-in bypass — never a default
+### `--env-test`: an explicit, opt-in bypass — never a default
 
 Both domain registration and the delivery preflight depend on real DNS by design — that's the entire point of the authentication layer. But that also means the project can't be exercised end-to-end without a domain the developer actually controls, which is a real onboarding friction for anyone just trying to run the code.
 
