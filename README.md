@@ -236,7 +236,7 @@ View delivered test emails at `http://localhost:8025`.
 
 There are two ways to exercise the full flow, depending on whether you have a real domain with DNS access.
 
-#### A) Using a real, DNS-controlled domain
+#### A) Using a real, DNS-controlled domain (only if you have a real domain you actually control, with DNS access. Otherwise, skip to Option B.)
 
 This is the realistic path: it exercises actual SPF/DKIM validation and the delivery preflight exactly as they'd run in production.
 
