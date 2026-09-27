@@ -27,7 +27,7 @@ func (s *Server) runPreflight(ctx context.Context, fromAddress string) preflight
 		return preflightInvalidFrom
 	}
 
-	registeredDomain, err := s.cache.GetDomain(ctx, "domain:"+fromDomain)
+	registeredDomain, err := s.cache.GetDomain(ctx, fromDomain)
 	if err != nil {
 		log.Printf("redis lookup failed for domain %s: %v", fromDomain, err)
 		registeredDomain = nil
