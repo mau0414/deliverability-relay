@@ -1,6 +1,6 @@
 package domain
 
-const Selector = "my_mta"
+const Selector = "mta"
 
 type Domain struct {
 	ID string
