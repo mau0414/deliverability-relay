@@ -11,14 +11,14 @@ The core relay, domain authentication validation, and the metrics dashboard are 
 ## Architecture
 
 ```text
-### Domain registration flow (POST /api/domains)
+### Domain registration flow (POST /domains)
 
-  POST /api/domains
+  POST /domains
          │
          ▼
    SPF/DKIM/DMARC
    DNS validation
-   (skipped if --local-test)
+   (skipped if --env-test)
          │
          ▼
    ┌──────────┐        ┌───────────┐
@@ -33,56 +33,75 @@ The core relay, domain authentication validation, and the metrics dashboard are 
   POST /send
       │
       ▼
+  Validate request
+  (required fields, from/to format)
+      │
+      ▼
 ┌──────────┐
 │PostgreSQL│  (persist, status = queued)
 └────┬─────┘
      ▼
-┌──────────┐
-│  Queue   │
-└────┬─────┘
-     ▼
-┌──────────────────┐
-│      Worker      │
-│                  │
-│  1. Preflight ───┼───▶┌───────────┐  hit
-│     (domain      │    │   Redis   │───────▶ verified?
-│      verified?)  │    │  (cache)  │
-│                  │    └─────┬─────┘
-│                  │          │ miss
-│                  │          ▼
-│                  │    ┌──────────┐
-│                  │    │PostgreSQL│──▶ populate Redis
-│                  │    └──────────┘
-│                  │
-│     (skipped if --local-test)
-│                  │
-│  2. MX resolve ──┼───▶ DNS
-│                  │
-│  3. SMTP delivery┼───▶ Recipient server
-└─────────┬────────┘
-          ▼
-   ┌──────────┐
-   │PostgreSQL│  (status update: sent / bounced / failed)
-   └──────────┘
+┌────────────────────┐
+│      Preflight      │   (runs in the HTTP handler, before enqueueing)
+│  (sender domain      │
+│   verified?)         │
+│                      │
+│  ┌───────────┐  hit  │
+│  │   Redis   │───────┼──▶ verified?
+│  │  (cache)  │       │
+│  └─────┬─────┘       │
+│        │ miss        │
+│        ▼             │
+│  ┌──────────┐        │
+│  │PostgreSQL│──▶ populate Redis
+│  └──────────┘        │
+│                      │
+│  (skipped if --env-test)
+└──────────┬───────────┘
+           │
+    fails  │  passes
+  ┌────────┴────────┐
+  ▼                 ▼
+PostgreSQL        Queue
+(status =            │
+ failed,             ▼
+ HTTP error,     ┌──────────┐
+ never queued)   │  Worker  │
+                 └────┬─────┘
+                      │
+              ┌───────┴────────┐
+              ▼                ▼
+         MX resolve       SMTP delivery
+          (DNS)          (recipient server)
+                      │
+                      ▼
+               ┌──────────┐
+               │PostgreSQL│  (status update: sent / bounced / failed)
+               └──────────┘
 ```
 
 ## Main Features
 
 ### Email submission and delivery
 
-- `POST /send` accepts a JSON payload (`from`, `to`, `subject`, `html`), validates it, persists it to PostgreSQL with `queued` status, and enqueues it for delivery.
-- A background worker dequeues emails, runs a domain preflight check (see below), resolves the recipient's MX records via DNS, and delivers over SMTP directly to the destination server — no intermediate relay.
+- `POST /send` accepts a JSON payload (`from`, `to`, `subject`, `html`), validates it, persists it to PostgreSQL with `queued` status, runs a domain preflight check (see below), and — if the preflight passes — enqueues it for delivery.
+- A background worker dequeues emails, resolves the recipient's MX records via DNS, and delivers over SMTP directly to the destination server — no intermediate relay.
 - STARTTLS is attempted opportunistically (only if the destination server advertises support), matching how production MTAs behave in practice.
 - Delivery outcomes are persisted back to PostgreSQL, updating the email's status through its lifecycle: `queued → sending → sent | bounced | failed`.
 
+### Invalid addresses are never silently accepted
+
+- A malformed `from` address is rejected at request validation time — before the email is even persisted — regardless of whether `--env-test` is active. This check is independent of domain authentication, so bypassing DNS validation with `--env-test` never bypasses basic address-format validation.
+- A malformed `to` address is treated as a permanent failure for that recipient (bounced, not retried) — the same way any other unrecoverable delivery error is handled — rather than being silently skipped. An email is never left indefinitely without a final status because of a bad recipient address.
+
 ### Domain registration and validation
 
-Domains are registered explicitly via `POST /api/domains`, separate from sending — a client verifies a domain once, then sends any number of emails from it, rather than re-validating on every send.
+Domains are registered explicitly via `POST /domains`, separate from sending — a client verifies a domain once, then sends any number of emails from it, rather than re-validating on every send.
 
 On registration, the relay performs DNS checks:
 
 - **SPF**: looks up the domain's TXT records for one starting with `v=spf1`. Missing SPF is recorded as `HasSPF = false`, not an error — the domain can still be registered.
-- **DKIM**: looks up `<selector>._domainkey.<domain>` (a fixed selector controlled by this relay, avoiding the ambiguity of guessing arbitrary third-party selectors) and checks for a non-empty public key (`p=`). This validates DNS configuration presence only — it does not perform cryptographic signature verification.
+- **DKIM**: looks up `<selector>._domainkey.<domain>` (a fixed selector controlled by this relay — `mta` — avoiding the ambiguity of guessing arbitrary third-party selectors) and checks for a non-empty public key (`p=`). This validates DNS configuration presence only — it does not perform cryptographic signature verification.
 - **DMARC**: looks up `_dmarc.<domain>` for a `v=DMARC1` record. DMARC is informational only — it does not block registration or sending, it's just recorded.
 
 The validator distinguishes a domain that **does not exist** (`NXDOMAIN` — registration fails) from a domain that exists but is simply missing one of these records (registration succeeds, the missing record is reflected in the stored flags). A DNS timeout or resolver error is treated as a third, distinct case: the validation couldn't be performed at all, not a definitive "missing" result.
@@ -101,12 +120,12 @@ Read path:
     └── miss ─► PostgreSQL ─► populate Redis ─► return result
 ```
 
-- On `POST /api/domains`, the validation result is written to Redis immediately after being persisted to PostgreSQL.
+- On `POST /domains`, the validation result is written to Redis immediately after being persisted to PostgreSQL.
 - PostgreSQL remains the source of truth. If Redis is unavailable at write time, the domain record in PostgreSQL still succeeds — the cache is a performance layer, never a requirement for correctness.
 
 ### Delivery preflight
 
-Before attempting delivery, the worker checks the sender's domain against the cache-aside lookup described above. If the domain isn't `verified` (missing required SPF or DKIM — DMARC is non-blocking), the email is marked `failed` immediately, without attempting MX resolution or an SMTP connection, and **without retry** — a domain that isn't authenticated won't become authenticated by trying again a moment later.
+Before an email is enqueued for delivery, the `/send` handler checks the sender's domain against the cache-aside lookup described above. If the domain isn't verified (missing required SPF or DKIM — DMARC is non-blocking), the email is marked `failed` immediately and the request returns an error — the email is never enqueued, and no MX resolution or SMTP connection is ever attempted for it. There's no retry for this case: a domain that isn't authenticated won't become authenticated by trying again a moment later.
 
 ### Failure classification and retry
 
@@ -139,9 +158,11 @@ This project was tested against two targets:
 }
 ```
 
-Returns `202 Accepted` with the email's ID. Delivery happens asynchronously; check status via the dashboard (a `GET /v1/emails/{id}` endpoint is planned — see Roadmap).
+- `202 Accepted` — the email passed validation and preflight, and was enqueued for delivery. Delivery happens asynchronously; check status via the dashboard (a `GET /v1/emails/{id}` endpoint is planned — see Roadmap).
+- `400 Bad Request` — the request is malformed (missing required fields, or an invalid `from` address format).
+- `422 Unprocessable Entity` — the sender domain isn't registered, or is registered but missing required SPF/DKIM authentication.
 
-### `POST /api/domains`
+### `POST /domains`
 
 ```json
 {
@@ -176,12 +197,12 @@ Main Go concepts used in the project:
 
 ```text
 cmd/api          → entry point, wires dependencies, starts the HTTP server
-internal/api      → HTTP handlers, request/response DTOs, dashboard rendering
-internal/domain    → core entities (Email, Status, validation)
+internal/api      → HTTP handlers, request/response DTOs, preflight check, dashboard rendering
+internal/domain    → core entities (Email, Domain, Status, validation)
 internal/dns       → MX resolution, recipient domain parsing, SPF/DKIM/DMARC lookups
 internal/smtp      → outbound SMTP client (connection, protocol, delivery, error classification)
 internal/queue     → delivery queue (in-memory, channel-based)
-internal/workers    → background worker: preflight check, drains the queue, delivers
+internal/workers    → background worker: drains the queue, resolves MX, delivers
 internal/repository → PostgreSQL persistence for emails, domains, and metrics
 internal/cache     → Redis cache-aside layer for domain validation results
 ```
@@ -234,21 +255,20 @@ View delivered test emails at `http://localhost:8025`.
 
 ### 5. Run the application
 
-```bash
-go run ./cmd/api
-```
-
-⚠️ **Important**
-If you don't have a domain with real DNS records to test against, run with `--env-test` instead, which skips SPF/DKIM validation on domain registration and skips the delivery preflight on send. Otherwise a DNS validation fail will happen. (see [`--env-test`: an explicit, opt-in bypass](#--env-test-an-explicit-opt-in-bypass) below):
+For local testing, run with `--env-test`, which skips SPF/DKIM validation on domain registration and skips the delivery preflight on send:
 
 ```bash
 go run ./cmd/api --env-test
 ```
 
+**This is the recommended way to run the project locally.** Exercising real domain authentication requires configuring a DKIM DNS record with this relay's fixed selector on a domain you actually control — realistically only practical if you own a domain, which most people trying out this project won't have on hand. See [Testing real domain authentication](#testing-real-domain-authentication-optional) below if you want to do that anyway.
+
+Without `--env-test`, `go run ./cmd/api` performs full DNS validation on every domain registration and every send.
+
 ### 6. Register a domain, then send a test email
 
 ```bash
-curl -X POST http://localhost:8080/api/domains \
+curl -X POST http://localhost:8080/domains \
   -H "Content-Type: application/json" \
   -d '{"name":"example.com"}'
 
@@ -257,9 +277,28 @@ curl -X POST http://localhost:8080/send \
   -d '{"from":"you@example.com","to":["someone@example.com"],"subject":"test","html":"<p>hi</p>"}'
 ```
 
-Without `--env-test`, the domain needs real DNS records — an SPF TXT record (`v=spf1 ...`) and a DKIM TXT record at `resend._domainkey.<your-domain>` with a public key (`p=...`) — or `/api/domains` will still return `201 Created` (a domain existing without full authentication is a valid state, not an error — see [Design Decisions](#design-decisions)) but `/send` will fail preflight and the email will be marked `failed` without an SMTP attempt.
-
 View the dashboard at `http://localhost:8080/dashboard`.
+
+### Testing real domain authentication (optional)
+
+If you want to exercise SPF/DKIM validation for real, rather than bypassing it with `--env-test`, you'll need a domain you control, with:
+
+- An SPF TXT record (`v=spf1 ...`)
+- A DKIM TXT record at **`mta._domainkey.<your-domain>`** with a public key (`p=...`) — `mta` is this relay's fixed DKIM selector (see [A note on testing domain authentication](#a-note-on-testing-domain-authentication) for why the selector is fixed rather than discovered)
+
+```bash
+go run ./cmd/api
+
+curl -X POST http://localhost:8080/domains \
+  -H "Content-Type: application/json" \
+  -d '{"name":"your-actual-domain.com"}'
+
+curl -X POST http://localhost:8080/send \
+  -H "Content-Type: application/json" \
+  -d '{"from":"you@your-actual-domain.com","to":["someone@example.com"],"subject":"test","html":"<p>hi</p>"}'
+```
+
+If SPF or DKIM is missing or misconfigured, `/domains` will still return `201 Created` (a domain existing without full authentication is a valid state, not an error — see [Design Decisions](#design-decisions)), but `/send` will fail preflight and the email will be marked `failed` without an SMTP attempt.
 
 ### Testing email delivery: where to send test emails
 
@@ -288,6 +327,83 @@ View delivered mail at `http://localhost:8025`.
 
 Neither guarantees permanent, unfiltered acceptance, but both are a reasonable default without a domain of your own to check.
 
+## Trying it out: every code path, end to end
+
+With the server running (`--env-test` recommended — see above), these calls exercise every outcome the API can produce, along with how to verify the result at each storage layer.
+
+### 1. Register a domain
+
+```bash
+curl -i -X POST http://localhost:8080/domains -H "Content-Type: application/json" \
+  -d '{"name":"example.com"}'
+```
+`201 Created`. Check it landed in Postgres and Redis:
+
+```bash
+docker exec -it mta-postgres psql -U mta -d mta \
+  -c "SELECT name, has_spf, has_dkim, has_dmarc FROM domains WHERE name = 'example.com';"
+
+docker exec -it mta-redis redis-cli GET "domain:example.com"
+```
+The Redis value should be a JSON blob matching the Postgres row — written there immediately after the Postgres insert, per the cache-aside flow.
+
+### 2. Register a domain that doesn't exist
+
+```bash
+curl -i -X POST http://localhost:8080/domains -H "Content-Type: application/json" \
+  -d '{"name":"this-domain-does-not-exist-123456.com"}'
+```
+`422 Unprocessable Entity` — `NXDOMAIN`, nothing is persisted.
+
+### 3. Send a valid email
+
+```bash
+curl -i -X POST http://localhost:8080/send -H "Content-Type: application/json" \
+  -d '{"from":"you@example.com","to":["someone@example.com"],"subject":"test","html":"<p>hi</p>"}'
+```
+`202 Accepted`. Confirm it made it through the full lifecycle:
+
+```bash
+docker exec -it mta-postgres psql -U mta -d mta \
+  -c "SELECT id, from_address, status, attempts, created_at, updated_at FROM emails ORDER BY created_at DESC LIMIT 1;"
+```
+Status should progress to `sent` (against Mailpit or a real destination) shortly after — see [Testing email delivery](#testing-email-delivery-where-to-send-test-emails) for where to actually check the message arrived.
+
+### 4. Send with a malformed `from` address
+
+```bash
+curl -i -X POST http://localhost:8080/send -H "Content-Type: application/json" \
+  -d '{"from":"not-an-email","to":["someone@example.com"],"subject":"test","html":"<p>hi</p>"}'
+```
+`400 Bad Request` — rejected at validation, before persistence, independent of `--env-test`.
+
+### 5. Send from a domain that was never registered
+
+```bash
+curl -i -X POST http://localhost:8080/send -H "Content-Type: application/json" \
+  -d '{"from":"you@never-registered.com","to":["someone@example.com"],"subject":"test","html":"<p>hi</p>"}'
+```
+`422 Unprocessable Entity`. The email is still persisted, with a final status:
+
+```bash
+docker exec -it mta-postgres psql -U mta -d mta \
+  -c "SELECT from_address, status FROM emails WHERE from_address = 'you@never-registered.com';"
+```
+Should show `failed` — rejected, but not silently dropped.
+
+### 6. Send from a registered domain missing SPF/DKIM
+
+Only reachable **without** `--env-test`, since the flag treats every registered domain as authenticated regardless of real DNS:
+
+```bash
+go run ./cmd/api   # no --env-test
+
+curl -i -X POST http://localhost:8080/domains -H "Content-Type: application/json" -d '{"name":"wikipedia.org"}'
+curl -i -X POST http://localhost:8080/send -H "Content-Type: application/json" \
+  -d '{"from":"you@wikipedia.org","to":["someone@example.com"],"subject":"test","html":"<p>hi</p>"}'
+```
+`422 Unprocessable Entity` — the domain exists and was registered successfully, but lacks the SPF/DKIM this relay requires.
+
 ## Running Tests
 
 ```bash
@@ -304,6 +420,9 @@ Chosen deliberately to demonstrate understanding of Go fundamentals rather than 
 ### Opportunistic STARTTLS
 The relay attempts STARTTLS if the destination server advertises support, rather than requiring it. This mirrors real-world MTA behavior — some servers (like local test servers) don't support TLS — and is a conscious security/compatibility trade-off, documented rather than hidden.
 
+### Preflight lives in the HTTP handler, not the worker
+Domain authentication is checked synchronously in `POST /send`, before the email is enqueued — not later in the background worker. This means a client submitting to an unauthenticated domain gets an immediate, informative error (`422`) instead of a `202` followed by silent, asynchronous failure. The email is still persisted first (with the rejection reflected in its final status), so there's a durable record of every request, accepted or not.
+
 ### Missing DNS records are not necessarily errors
 A domain can exist without SPF, DKIM, or DMARC configured. Because of this, the validator treats "domain does not exist" as a fundamentally different case from "domain exists but SPF is missing" — the first is a hard failure, the second is a valid (if incomplete) domain state worth recording, not rejecting.
 
@@ -317,13 +436,19 @@ Redis is deliberately not used as the primary data store for domain validation r
 The delivery queue is ephemeral by design (a Go channel); losing it on process restart is an accepted limitation for the current stage of the project. Email status, by contrast, is transactional data and belongs in PostgreSQL, not in a disposable queue or cache — this distinction was a deliberate choice about which storage tool fits which kind of data.
 
 ### No sender-facing API authentication (yet)
-`POST /send` and `POST /api/domains` are currently open — any caller can submit a send or register a domain. In a production system this relay's own premise (only authenticated clients should be able to send) would require it. It's left out of the current scope by deliberate choice, not oversight, to keep focus on the delivery and DNS-authentication mechanics that were the core learning goal of this project.
+`POST /send` and `POST /domains` are currently open — any caller can submit a send or register a domain. In a production system this relay's own premise (only authenticated clients should be able to send) would require it. It's left out of the current scope by deliberate choice, not oversight, to keep focus on the delivery and DNS-authentication mechanics that were the core learning goal of this project.
 
 ### `--env-test`: an explicit, opt-in bypass — never a default
 
 Both domain registration and the delivery preflight depend on real DNS by design — that's the entire point of the authentication layer. But that also means the project can't be exercised end-to-end without a domain the developer actually controls, which is a real onboarding friction for anyone just trying to run the code.
 
-Rather than silently relaxing validation in some "dev mode" inferred from an environment variable, `--local-test` is an explicit command-line flag: it has to be typed, it's visible in the process's invocation, and it can't be enabled by accident through a misconfigured `.env` file left over from testing. The bypassed checks are exactly the same ones that matter most in production (DNS-backed domain authentication) — flagging that clearly, rather than hiding it behind a generic "test mode," was a deliberate choice to keep the risk of accidentally shipping a bypassed check to production as visible as possible.
+Rather than silently relaxing validation in some "dev mode" inferred from an environment variable, `--env-test` is an explicit command-line flag: it has to be typed, it's visible in the process's invocation, and it can't be enabled by accident through a misconfigured `.env` file left over from testing. The bypassed checks are exactly the same ones that matter most in production (DNS-backed domain authentication) — flagging that clearly, rather than hiding it behind a generic "test mode," was a deliberate choice to keep the risk of accidentally shipping a bypassed check to production as visible as possible.
+
+### A note on testing domain authentication
+
+SPF and DKIM validation exist to solve a real problem — without them, anyone could claim to send email as any domain. That's exactly why they're inconvenient to test: configuring a real DKIM record with this relay's selector (`mta._domainkey.<your-domain>`) requires owning a domain and having DNS access to it, which most people trying out this project won't have on hand.
+
+This is expected, not a limitation specific to this project — any real email-sending API (including the ones this project is modeled after) has the same requirement for production use. `--env-test` exists precisely to let you exercise the rest of the system (queue, worker, SMTP delivery, status tracking, dashboard) without that setup cost, while keeping the validation logic itself fully implemented and independently testable (see `internal/dns`'s test suite).
 
 ## Roadmap
 
