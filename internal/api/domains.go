@@ -45,6 +45,7 @@ func (s *Server) handleDomains() http.HandlerFunc {
 		}
 
 		if err := s.domainRepository.Save(ctx, newDomain); err != nil {
+			log.Printf("failed to save domain %s: %v", newDomain.Name, err)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to save domain"})

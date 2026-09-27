@@ -1,6 +1,8 @@
 package domain
 
-import "errors"
+import ("errors"
+		"fmt"
+		"strings")
 
 const MaxDeliveryAttempts = 5
 
@@ -37,6 +39,21 @@ type Email struct {
 	Attempts int
 }
 
+func ParseDomain(emailAddr string) (string, error) {
+
+	parts := strings.Split(emailAddr, "@")
+
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+
+		return "", errors.New("invalid email format")
+
+	}
+
+	return parts[1], nil
+
+}
+
+
 func (e Email) Validate() error {
 	
 	if len(e.To) == 0 {
@@ -47,6 +64,17 @@ func (e Email) Validate() error {
 	}
 	if e.Subject == ""{
 		return errors.New("missing required field: subject")
+	}
+	if _, err := ParseDomain(e.From); err != nil {
+		return errors.New("sender email has an invalid format")
+	} 
+	for _, to := range e.To {
+
+		if a, err := ParseDomain(to); err != nil {
+			fmt.Println(a)
+			return errors.New("receiver email has an invalid format")
+		} 
+		
 	}
 	
 	return nil

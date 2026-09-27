@@ -1,15 +1,14 @@
 package api
 
 import (
-	"encoding/json"
-	"net/http"
-	"log"
-	"errors"
 	"context"
+	"encoding/json"
+	"errors"
+	"log"
+	"net/http"
 
-	"github.com/mau0414/deliverability-relay/internal/dns"
-	"github.com/mau0414/deliverability-relay/internal/domain"
 	"github.com/jackc/pgx/v5"
+	"github.com/mau0414/deliverability-relay/internal/domain"
 )
 
 type preflightResult int
@@ -23,7 +22,7 @@ const (
 )
 
 func (s *Server) runPreflight(ctx context.Context, fromAddress string) preflightResult {
-	fromDomain, err := dns.ParseReceiverDomain(fromAddress)
+	fromDomain, err := domain.ParseDomain(fromAddress)
 	if err != nil {
 		return preflightInvalidFrom
 	}
@@ -76,7 +75,6 @@ func (s *Server) handleSend() http.HandlerFunc {
 			return
 		}
 
-
 		if err := s.emailRepository.Save(ctx, email); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -84,7 +82,6 @@ func (s *Server) handleSend() http.HandlerFunc {
 			return
 		}
 
-		
 		if !s.skipPreFlight {
 			switch s.runPreflight(ctx, email.From) {
 			case preflightInvalidFrom:
@@ -113,14 +110,12 @@ func (s *Server) handleSend() http.HandlerFunc {
 			}
 		}
 
-
 		if err := s.queue.Enqueue(email); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 			return
 		}
-
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)

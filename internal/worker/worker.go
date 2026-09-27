@@ -8,15 +8,14 @@ import (
 	"github.com/mau0414/deliverability-relay/internal/dns"
 	"github.com/mau0414/deliverability-relay/internal/domain"
 	"github.com/mau0414/deliverability-relay/internal/queue"
-	"github.com/mau0414/deliverability-relay/internal/smtp"
 	"github.com/mau0414/deliverability-relay/internal/repository"
+	"github.com/mau0414/deliverability-relay/internal/smtp"
 )
 
 type Worker struct {
-
-	queue queue.Queue
+	queue      queue.Queue
 	mxResolver *dns.MXResolver
-	mtaDomain string
+	mtaDomain  string
 	repository *repository.EmailRepository
 	useMailpit bool
 }
@@ -24,15 +23,14 @@ type Worker struct {
 func NewWorker(q queue.Queue, mtaDomain string, r *repository.EmailRepository, useMailpit bool) *Worker {
 
 	return &Worker{
-		queue: q,
+		queue:      q,
 		mxResolver: dns.NewMXResolver(),
-		mtaDomain: mtaDomain,
+		mtaDomain:  mtaDomain,
 		repository: r,
 		useMailpit: useMailpit,
-	}	
+	}
 
 }
-
 
 func (w *Worker) handleDeliveryFailure(ctx context.Context, email domain.Email, to string, err error) {
 
@@ -88,7 +86,7 @@ func (w *Worker) Start(ctx context.Context) {
 			if w.useMailpit {
 				addr = "localhost:1025"
 			} else {
-				toDomain, err := dns.ParseReceiverDomain(to)
+				toDomain, err := domain.ParseDomain(to)
 				if err != nil {
 					log.Printf("invalid recipient address %s: %v", to, err)
 					continue
